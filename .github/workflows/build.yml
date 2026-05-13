@@ -1,0 +1,23 @@
+name: Build Gibson Wi-Fi 7 Image
+on:
+  workflow_dispatch: # Allows you to start the build manually
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Userpatches (This Repo)
+        uses: actions/checkout@v4
+        with:
+          path: userpatches
+
+      - name: Build Armbian Image
+        uses: armbian/build@main
+        with:
+          armbian_token: ${{ secrets.GITHUB_TOKEN }}
+          armbian_board: "orangepi-4pro"
+          armbian_branch: "mainline"
+          armbian_release: "bookworm"
+          armbian_target: "build"
+          armbian_ui: "minimal"
+          armbian_extensions: "userpatches"
