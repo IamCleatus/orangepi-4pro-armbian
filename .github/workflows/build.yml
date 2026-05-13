@@ -1,23 +1,29 @@
 name: Build Wi-Fi 7 Image
 on:
-  workflow_dispatch: # Allows you to start the build manually
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # Suppresses the Node.js 20 deprecation warning for the runner
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout Userpatches (This Repo)
         uses: actions/checkout@v4
         with:
           path: userpatches
+          fetch-depth: 0 # Ensures all git tags/history are available
 
       - name: Build Armbian Image
         uses: armbian/build@main
         with:
           armbian_token: ${{ secrets.GITHUB_TOKEN }}
           armbian_board: "orangepi-4pro"
-          armbian_branch: "mainline"
+          armbian_kernel_branch: "mainline" # Correctly set the kernel version
+          armbian_branch: "main"           # Correctly set the build tools branch
           armbian_release: "bookworm"
           armbian_target: "build"
           armbian_ui: "minimal"
+          armbian_runner_clean: "true"     # Wipes the runner to make 30GB+ of space
           armbian_extensions: "userpatches"
