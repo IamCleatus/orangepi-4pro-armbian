@@ -1,4 +1,4 @@
-name: Build Gibson Wi-Fi 7 Image
+name: Build Wi-Fi 7 Image
 on:
   workflow_dispatch: # Allows you to start the build manually
 
