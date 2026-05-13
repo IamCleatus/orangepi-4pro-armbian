@@ -1,4 +1,4 @@
-name: Build ORANGE PI 4 PRO Wi-Fi 7 Image
+name: Build for Wi-Fi 7 Image
 on:
   workflow_dispatch:
 
@@ -6,33 +6,26 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # 1. Clean the runner to make room for the 6.19 kernel build
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
         with:
           tool-cache: true
           android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
 
-      # 2. Checkout your specific patches (The Gibson DNA)
-      - name: Checkout Patches
+      - name: Checkout Gibson Patches
         uses: actions/checkout@v4
         with:
           path: userpatches
 
-      # 3. Build the image using the official Armbian Action
-      # We tell it exactly where to find the board config
-      - name: Build Armbian
+      - name: Build Armbian Image
         uses: armbian/build@main
         with:
           armbian_token: ${{ secrets.GITHUB_TOKEN }}
           armbian_board: "orangepi-4pro"
-          armbian_kernel_branch: "mainline"
+          armbian_kernel_branch: "branch:linux-6.19.y"
+          armbian_branch: "main"
           armbian_release: "bookworm"
           armbian_target: "build"
           armbian_ui: "minimal"
-          # This version flag is critical for the 6.19 MT7925 drivers
-          armbian_version: "26.05.0-Gibson"
+          # This flag tells the engine to look in your repo for the BOARD file
+          armbian_extensions: "userpatches"
