@@ -1,4 +1,4 @@
-name: Build for Wi-Fi 7 Image
+name: Build Wi-Fi 7 Image
 on:
   workflow_dispatch:
 
@@ -6,31 +6,35 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # 1. Pull the official Armbian engine
       - name: Checkout Armbian Build System
         uses: actions/checkout@v4
         with:
           repository: armbian/build
           path: build-system
 
+      # 2. Pull your Orange Pi 4 Pro patches into the engine
       - name: Checkout Gibson Patches (This Repo)
         uses: actions/checkout@v4
         with:
           path: build-system/userpatches
 
+      # 3. Wipe the runner's bloat to make room for the 6.19 kernel
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
         with:
           tool-cache: true
           android: true
 
+      # 4. Run the factory (targets Kernel 6.19 for Wi-Fi 7)
       - name: Build Armbian Image
         run: |
           cd build-system
-          # We pass KERNEL_MAJOR_MINOR=6.19 to ensure the MT7925 drivers are included
           ./compile.sh BOARD=orangepi-4pro BRANCH=mainline RELEASE=bookworm \
           BUILD_MINIMAL=yes KERNEL_CONFIGURE=no KERNEL_MAJOR_MINOR=6.19 \
           SKIP_EXTERNAL_DRIVERS=yes
 
+      # 5. Save the finished image for download
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
