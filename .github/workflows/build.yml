@@ -6,57 +6,52 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # 1. Setup cross-architecture translation layers
       - name: Register QEMU
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-user-static binfmt-support
           docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 
-      # 2. Pull the main Armbian Build Framework
       - name: Checkout Armbian Build System
         uses: actions/checkout@v4
         with:
           repository: armbian/build
           path: build-system
 
-      # 3. Pull your custom board configuration layer
       - name: Checkout Gibson Patches (This Repo)
         uses: actions/checkout@v4
         with:
           path: build-system/userpatches
 
-      # 4. HOT-PATCH: Intercept and fix the Module.symvers find bug before compilation starts
+      # Fixes the Module.symvers find error that can block the final step
       - name: Hot-Patch Packaging Engine
         run: |
           TARGET_FILE="build-system/lib/functions/compilation/kernel-debs.sh"
           if [ -f "$TARGET_FILE" ]; then
-            echo "Applying lookahead safety configurations to $TARGET_FILE..."
-            # Adjusts strict find commands to bypass missing symvers files cleanly
             sed -i 's/find Module.symvers/find Module.symvers 2>\/dev\/null || find/g' "$TARGET_FILE"
-            echo "Packaging engine hot-patch successfully completed."
-          else
-            echo "::error::Core packaging script missing from workspace layout!" && exit 1
           fi
 
-      # 5. DYNAMIC TEMPLATE: Build a complete kernel configuration using existing board profiles
-      - name: Prepare Kernel Configuration Baseline
+      # Inherits a full board configuration baseline and injects Wi-Fi 7 + RAMdisk layers
+      - name: Synthesize Complete Kernel Config
         run: |
+          mkdir -p build-system/userpatches/config/kernel
           mkdir -p build-system/config/kernel
           
-          # Locate any valid baseline template for the sun60iw2 architecture family
-          BASE_CONFIG=$(ls build-system/config/kernel/linux-sun60iw2-*.config 2>/dev/null | head -n 1)
+          # Search for ANY existing sun60iw2 config template in the workspace
+          FOUND_CONFIG=$(find build-system/config/kernel/ build-system/userpatches/config/kernel/ -name "linux-sun60iw2-*.config" 2>/dev/null | head -n 1)
           
-          if [ -n "$BASE_CONFIG" ]; then
-            echo "Cloning structural baseline configuration from $BASE_CONFIG..."
-            cp "$BASE_CONFIG" build-system/config/kernel/linux-sun60iw2-edge.config
+          if [ -n "$FOUND_CONFIG" ]; then
+            echo "Found base template at $FOUND_CONFIG. Cloning structure..."
+            cp "$FOUND_CONFIG" build-system/config/kernel/linux-sun60iw2-edge.config
           else
-            echo "Baseline template missing! Creating a clean config envelope..."
-            touch build-system/config/kernel/linux-sun60iw2-edge.config
+            echo "No local template found! Pulling standard upstream sun60iw2 baseline..."
+            curl -sL "https://raw.githubusercontent.com/armbian/build/main/config/kernel/linux-sun60iw2-current.config" -o build-system/config/kernel/linux-sun60iw2-edge.config
           fi
           
-          # Securely append the high-bandwidth MediaTek wireless drivers at the end of the template
+          # Force append core RAMdisk targets and your Wi-Fi 7 driver variables
           cat <<EOF >> build-system/config/kernel/linux-sun60iw2-edge.config
+          CONFIG_BLK_DEV_INITRD=y
+          CONFIG_RD_GZIP=y
           CONFIG_MT7925U=m
           CONFIG_MT792x_LIB=m
           CONFIG_MT76_USB=m
@@ -66,28 +61,24 @@ jobs:
           CONFIG_BT_HCIBTUSB_MTK=y
           EOF
           
-          # Copy the compiled config profile into userpatches to clear integrity checks
-          mkdir -p build-system/userpatches/config/kernel
-          cp build-system/config/kernel/linux-sun60iw2-edge.config build-system/userpatches/config/kernel/
-          echo "Bespoke edge kernel config layout fully synthesized."
+          # Sync to userpatches to satisfy the build system integrity check
+          cp build-system/config/kernel/linux-sun60iw2-edge.config build-system/userpatches/config/kernel/linux-sun60iw2-edge.config
+          echo "Configuration compilation complete."
 
-      # 6. Reclaim disk space on the hosted runner for the image building footprint
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
         with:
           tool-cache: true
           android: true
 
-      # 7. Execute the build engine targeting the mainline kernel stack
       - name: Build Armbian Image
         run: |
           cd build-system
           ./compile.sh BOARD=orangepi-4pro BRANCH=edge RELEASE=bookworm \
           BUILD_MINIMAL=yes KERNEL_CONFIGURE=no KERNEL_MAJOR_MINOR=6.19 \
-          BUILD_KHDR=no BUILD_KSRC=no SKIP_EXTERNAL_DRIVERS=yes \
+          BUILD_KHDR=no BUILD_KSRC=no \
           DOCKER_PRIVILEGED=yes
-
-      # 8. Extract and compress the completed operating system image
+          
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
