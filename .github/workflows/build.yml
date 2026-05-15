@@ -18,10 +18,24 @@ jobs:
           repository: armbian/build
           path: build-system
 
-      - name: Checkout Patches (This Repo)
+      - name: Checkout Gibson Patches (This Repo)
         uses: actions/checkout@v4
         with:
           path: build-system/userpatches
+
+      - name: Create Missing Kernel Config
+        run: |
+          # Create the exact file the build engine is complaining about
+          mkdir -p build-system/config/kernel/
+          cat <<EOF > build-system/config/kernel/linux-sun60iw2-edge.config
+          CONFIG_MT7925U=m
+          CONFIG_MT792x_LIB=m
+          CONFIG_MT76_USB=m
+          CONFIG_MT76_CONNAC_LIB=m
+          EOF
+          # Also copy it to userpatches for redundancy
+          mkdir -p build-system/userpatches/config/kernel/
+          cp build-system/config/kernel/linux-sun60iw2-edge.config build-system/userpatches/config/kernel/
 
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
@@ -41,5 +55,5 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: orangepi-4pro-2.19-WiFi7-Image
+          name: orangepi-4pro-2.19-Image
           path: build-system/output/images/*.img*
