@@ -32,10 +32,7 @@ jobs:
       - name: Build Armbian Image
         run: |
           cd build-system
-          # We use BRANCH=mainline and KERNEL_MAJOR_MINOR=6.19
-          # BUILD_KHDR=no and BUILD_KSRC=no bypass the packaging errors
-          # EXTRA_CONFIG forces the A9000's MT7925 driver to compile
-          ./compile.sh BOARD=orangepi-4pro BRANCH=mainline RELEASE=bookworm \
+          ./compile.sh BOARD=orangepi-4pro BRANCH=edge RELEASE=bookworm \
           BUILD_MINIMAL=yes KERNEL_CONFIGURE=no KERNEL_MAJOR_MINOR=6.19 \
           BUILD_KHDR=no BUILD_KSRC=no SKIP_EXTERNAL_DRIVERS=yes \
           DOCKER_PRIVILEGED=yes \
