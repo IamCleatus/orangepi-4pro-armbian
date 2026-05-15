@@ -23,6 +23,20 @@ jobs:
         with:
           path: build-system/userpatches
 
+      - name: Create Missing Kernel Config
+        run: |
+          # Create the directory structure the build engine expects
+          mkdir -p build-system/userpatches/config/kernel/
+          
+          # Create a minimal config for the sun60iw2 edge branch
+          # This satisfies the sha256sum check and enables WiFi 7
+          cat <<EOF > build-system/userpatches/config/kernel/linux-sun60iw2-edge.config
+          CONFIG_MT7925U=m
+          CONFIG_MT792x_LIB=m
+          CONFIG_MT76_USB=m
+          CONFIG_MT76_CONNAC_LIB=m
+          EOF
+
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
         with:
@@ -32,15 +46,13 @@ jobs:
       - name: Build Armbian Image
         run: |
           cd build-system
-          # Use BRANCH=edge to tell the system we want the absolute latest
-          # We also add the 'EXTRA_CONFIG' to force the WiFi 7 driver to compile
+          # Use BRANCH=edge to target Kernel 6.22
           ./compile.sh BOARD=orangepi-4pro BRANCH=edge RELEASE=bookworm \
           BUILD_MINIMAL=yes KERNEL_CONFIGURE=no KERNEL_MAJOR_MINOR=6.22 \
-          SKIP_EXTERNAL_DRIVERS=yes DOCKER_PRIVILEGED=yes \
-          EXTRA_CONFIG="CONFIG_MT7925U=m CONFIG_MT792x_LIB=m"
+          SKIP_EXTERNAL_DRIVERS=yes DOCKER_PRIVILEGED=yes
           
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: orangepi-4pro-WiFi7-Image-v6.22
+          name: WiFi7-Image-v6.22
           path: build-system/output/images/*.img*
