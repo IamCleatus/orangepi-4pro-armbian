@@ -25,8 +25,17 @@ jobs:
 
       - name: Create Kernel Configuration
         run: |
-          mkdir -p build-system/userpatches
-          cat <<EOF > build-system/userpatches/linux-sunxi-edge.config
+          mkdir -p build-system/userpatches/kernel/archive/sun60iw2-6.19
+          cat <<EOF > build-system/userpatches/kernel/archive/sun60iw2-6.19/sun60iw2-6.19.patch
+          --- a/drivers/net/wireless/mediatek/mt76/Kconfig
+          +++ b/drivers/net/wireless/mediatek/mt76/Kconfig
+          CONFIG_MT7925U=m
+          CONFIG_MT792x_LIB=m
+          CONFIG_MT76_USB=m
+          CONFIG_MT76_CONNAC_LIB=m
+          EOF
+          mkdir -p build-system/userpatches/kernel/config
+          cat <<EOF > build-system/userpatches/kernel/config/linux-sun60iw2-edge.config
           CONFIG_MT7925U=m
           CONFIG_MT792x_LIB=m
           CONFIG_MT76_USB=m
