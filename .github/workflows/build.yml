@@ -6,45 +6,41 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # 1. Register QEMU binfmts (Fixes the "Process completed with exit code 1")
       - name: Register QEMU
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-user-static binfmt-support
           docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 
-      # 2. Pull the official Armbian engine
       - name: Checkout Armbian Build System
         uses: actions/checkout@v4
         with:
           repository: armbian/build
           path: build-system
 
-      # 3. Pull your Gibson Patches into the engine's 'userpatches' folder
       - name: Checkout Patches (This Repo)
         uses: actions/checkout@v4
         with:
           path: build-system/userpatches
 
-      # 4. Wipe the runner's bloat to ensure 30GB+ of room
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
         with:
           tool-cache: true
           android: true
 
-      # 5. Run the factory (Targets Kernel 6.21 for Wi-Fi 7)
       - name: Build Armbian Image
         run: |
           cd build-system
-          # KERNEL_MAJOR_MINOR=6.21 forces the latest wireless stack
-          ./compile.sh BOARD=orangepi-4pro BRANCH=mainline RELEASE=bookworm \
-          BUILD_MINIMAL=yes KERNEL_CONFIGURE=no KERNEL_MAJOR_MINOR=6.21 \
-          SKIP_EXTERNAL_DRIVERS=yes DOCKER_PRIVILEGED=yes
+          # Use BRANCH=edge to tell the system we want the absolute latest
+          # We also add the 'EXTRA_CONFIG' to force the WiFi 7 driver to compile
+          ./compile.sh BOARD=orangepi-4pro BRANCH=edge RELEASE=bookworm \
+          BUILD_MINIMAL=yes KERNEL_CONFIGURE=no KERNEL_MAJOR_MINOR=6.22 \
+          SKIP_EXTERNAL_DRIVERS=yes DOCKER_PRIVILEGED=yes \
+          EXTRA_CONFIG="CONFIG_MT7925U=m CONFIG_MT792x_LIB=m"
           
-      # 6. Save the finished image for download
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kernal2.21-WiFi7-Image
+          name: orangepi-4pro-WiFi7-Image-v6.22
           path: build-system/output/images/*.img*
