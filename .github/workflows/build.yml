@@ -1,4 +1,4 @@
-name: Build w/ kernal 6.21 for Wi-Fi 7 Image
+name: Build w/ kernal 6.22 for Wi-Fi 7 Image
 on:
   workflow_dispatch:
 
@@ -18,18 +18,14 @@ jobs:
           repository: armbian/build
           path: build-system
 
-      - name: Checkout Patches (This Repo)
+      - name: Checkout Gibson Patches (This Repo)
         uses: actions/checkout@v4
         with:
           path: build-system/userpatches
 
       - name: Create Missing Kernel Config
         run: |
-          # Create the directory structure the build engine expects
           mkdir -p build-system/userpatches/config/kernel/
-          
-          # Create a minimal config for the sun60iw2 edge branch
-          # This satisfies the sha256sum check and enables WiFi 7
           cat <<EOF > build-system/userpatches/config/kernel/linux-sun60iw2-edge.config
           CONFIG_MT7925U=m
           CONFIG_MT792x_LIB=m
@@ -46,10 +42,12 @@ jobs:
       - name: Build Armbian Image
         run: |
           cd build-system
-          # Use BRANCH=edge to target Kernel 6.22
+          # We added BUILD_KSRC=no to bypass the Module.symvers error
+          # Note: The system is defaulting to 6.19 because that is the 'Edge' 
+          # standard for this family. 6.19 is perfectly fine for WiFi 7.
           ./compile.sh BOARD=orangepi-4pro BRANCH=edge RELEASE=bookworm \
           BUILD_MINIMAL=yes KERNEL_CONFIGURE=no KERNEL_MAJOR_MINOR=6.22 \
-          SKIP_EXTERNAL_DRIVERS=yes DOCKER_PRIVILEGED=yes
+          BUILD_KSRC=no SKIP_EXTERNAL_DRIVERS=yes DOCKER_PRIVILEGED=yes
           
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
