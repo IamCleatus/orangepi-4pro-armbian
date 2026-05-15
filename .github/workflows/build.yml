@@ -18,20 +18,10 @@ jobs:
           repository: armbian/build
           path: build-system
 
-      - name: Checkout Gibson Patches (This Repo)
+      - name: Checkout Patches (This Repo)
         uses: actions/checkout@v4
         with:
           path: build-system/userpatches
-
-      - name: Create Missing Kernel Config
-        run: |
-          mkdir -p build-system/userpatches/config/kernel/
-          cat <<EOF > build-system/userpatches/config/kernel/linux-sun60iw2-edge.config
-          CONFIG_MT7925U=m
-          CONFIG_MT792x_LIB=m
-          CONFIG_MT76_USB=m
-          CONFIG_MT76_CONNAC_LIB=m
-          EOF
 
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
@@ -42,15 +32,17 @@ jobs:
       - name: Build Armbian Image
         run: |
           cd build-system
-          # We added BUILD_KSRC=no to bypass the Module.symvers error
-          # Note: The system is defaulting to 6.19 because that is the 'Edge' 
-          # standard for this family. 6.19 is perfectly fine for WiFi 7.
-          ./compile.sh BOARD=orangepi-4pro BRANCH=edge RELEASE=bookworm \
-          BUILD_MINIMAL=yes KERNEL_CONFIGURE=no KERNEL_MAJOR_MINOR=6.22 \
-          BUILD_KSRC=no SKIP_EXTERNAL_DRIVERS=yes DOCKER_PRIVILEGED=yes
+          # We use BRANCH=mainline and KERNEL_MAJOR_MINOR=6.19
+          # BUILD_KHDR=no and BUILD_KSRC=no bypass the packaging errors
+          # EXTRA_CONFIG forces the A9000's MT7925 driver to compile
+          ./compile.sh BOARD=orangepi-4pro BRANCH=mainline RELEASE=bookworm \
+          BUILD_MINIMAL=yes KERNEL_CONFIGURE=no KERNEL_MAJOR_MINOR=6.19 \
+          BUILD_KHDR=no BUILD_KSRC=no SKIP_EXTERNAL_DRIVERS=yes \
+          DOCKER_PRIVILEGED=yes \
+          EXTRA_CONFIG="CONFIG_MT7925U=m CONFIG_MT792x_LIB=m CONFIG_MT76_USB=m"
           
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: WiFi7-Image-v6.22
+          name: orangepi-4pro-2.19-WiFi7-Image
           path: build-system/output/images/*.img*
