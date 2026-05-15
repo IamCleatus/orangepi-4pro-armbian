@@ -1,4 +1,4 @@
-name: Build w/ kernal 6.19 for Wi-Fi 7 Image
+name: Build w/ kernel 6.19 for Wi-Fi 7 Image
 on:
   workflow_dispatch:
 
@@ -23,19 +23,15 @@ jobs:
         with:
           path: build-system/userpatches
 
-      - name: Create Missing Kernel Config
+      - name: Create Kernel Configuration
         run: |
-          # Create the exact file the build engine is complaining about
-          mkdir -p build-system/config/kernel/
-          cat <<EOF > build-system/config/kernel/linux-sun60iw2-edge.config
+          mkdir -p build-system/userpatches
+          cat <<EOF > build-system/userpatches/linux-sunxi-edge.config
           CONFIG_MT7925U=m
           CONFIG_MT792x_LIB=m
           CONFIG_MT76_USB=m
           CONFIG_MT76_CONNAC_LIB=m
           EOF
-          # Also copy it to userpatches for redundancy
-          mkdir -p build-system/userpatches/config/kernel/
-          cp build-system/config/kernel/linux-sun60iw2-edge.config build-system/userpatches/config/kernel/
 
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
@@ -48,12 +44,11 @@ jobs:
           cd build-system
           ./compile.sh BOARD=orangepi-4pro BRANCH=edge RELEASE=bookworm \
           BUILD_MINIMAL=yes KERNEL_CONFIGURE=no KERNEL_MAJOR_MINOR=6.19 \
-          BUILD_KHDR=no BUILD_KSRC=no SKIP_EXTERNAL_DRIVERS=yes \
-          DOCKER_PRIVILEGED=yes \
-          EXTRA_CONFIG="CONFIG_MT7925U=m CONFIG_MT792x_LIB=m CONFIG_MT76_USB=m"
+          BUILD_KHDR=no BUILD_KSRC=no \
+          DOCKER_PRIVILEGED=yes
           
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: orangepi-4pro-2.19-Image
+          name: orangepi-4pro-6.19-Image
           path: build-system/output/images/*.img*
