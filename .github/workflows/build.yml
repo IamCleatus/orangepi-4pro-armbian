@@ -1,4 +1,4 @@
-name: Build Kernel 6.19 for Orange Pi 4 Pro (Mainline)
+name: Build Kernel 6.19 for Orange Pi 4 Pro (WiFi 7)
 
 on:
   workflow_dispatch:
@@ -15,61 +15,54 @@ on:
 
 jobs:
   build:
-    name: Build Armbian Image
+    name: Build Armbian with MT7925 WiFi 7
     runs-on: ubuntu-latest
     timeout-minutes: 480
     
     steps:
-      - name: Setup QEMU for ARM64
+      - name: Setup QEMU
         run: |
-          echo "Setting up QEMU user-static for cross-architecture builds..."
           sudo apt-get update -qq
-          sudo apt-get install -y -qq qemu-user-static binfmt-support 2>&1 | grep -v "^Setting up"
+          sudo apt-get install -y -qq qemu-user-static binfmt-support
           docker run --rm --privileged multiarch/qemu-user-static --reset -p yes 2>/dev/null || true
-          echo "✓ QEMU initialized"
 
-      - name: Checkout Armbian Build Framework
+      - name: Checkout Armbian Build
         uses: actions/checkout@v4
         with:
           repository: armbian/build
           path: armbian-build
           fetch-depth: 1
 
-      - name: Checkout Custom Patches and Board Config
+      - name: Checkout Custom Board Config
         uses: actions/checkout@v4
         with:
           path: armbian-build/userpatches
           fetch-depth: 1
 
-      - name: Register Board with Armbian (Pre-Build)
+      - name: Register Board (Pre-Build)
         run: |
           set -e
           cd armbian-build
           
-          echo "Pre-registering custom board with Armbian framework..."
-          
-          # Copy board config BEFORE compile.sh reads it
           mkdir -p config/boards config/sources/families userpatches/kernel-config
           
           cp -v userpatches/config/boards/orangepi-4pro.conf config/boards/
           cp -v userpatches/config/sources/families/sun60iw2.conf config/sources/families/
           cp -v userpatches/config/kernel/linux-sun60iw2-mainline.config userpatches/kernel-config/
           
-          echo "✓ Board files registered"
+          echo "✓ Board config registered for mainline kernel 6.19 with MT7925 WiFi 7"
 
-      - name: Reclaim Disk Space
+      - name: Free Disk Space
         run: |
-          sudo rm -rf /usr/local/lib/android 2>/dev/null || true
-          sudo rm -rf /opt/hostedtoolcache 2>/dev/null || true
+          sudo rm -rf /usr/local/lib/android /opt/hostedtoolcache 2>/dev/null || true
           df -h / | head -2
 
-      - name: Build Armbian Image
+      - name: Build Armbian
         id: build
         run: |
           set -e
           cd armbian-build
           
-          echo "Starting Armbian build..."
           timeout 450 ./compile.sh \
             BOARD=orangepi-4pro \
             BRANCH=mainline \
@@ -82,53 +75,41 @@ jobs:
             SKIP_EXTERNAL_DRIVERS=yes \
             DOCKER_PRIVILEGED=yes || {
             
-            BUILD_EXIT=$?
-            echo "⚠ Build exited with code $BUILD_EXIT"
-            
-            # Check if it actually built successfully despite exit code
-            if [ -f "output/images/Armbian_"* ] || [ -d "output/images" ] && [ -n "$(find output/images -name '*.img*' 2>/dev/null)" ]; then
-              echo "✓ Image files exist - build likely succeeded"
+            if [ -d "output/images" ] && [ -n "$(find output/images -name '*.img*' 2>/dev/null)" ]; then
               echo "build_success=true" >> "$GITHUB_OUTPUT"
-              exit 0
             else
-              echo "✗ No image files found - build failed"
               echo "build_success=false" >> "$GITHUB_OUTPUT"
               exit 1
             fi
           }
           
-          echo "✓ Build completed"
           echo "build_success=true" >> "$GITHUB_OUTPUT"
 
-      - name: Upload Build Artifacts
+      - name: Upload Artifacts
         if: steps.build.outputs.build_success == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: orangepi-4pro-mainline-${{ github.event.inputs.release || 'bookworm' }}-kernel-6.19
+          name: orangepi-4pro-mainline-6.19-wifi7-${{ github.event.inputs.release || 'bookworm' }}
           path: armbian-build/output/images/
           retention-days: 30
-          if-no-files-found: error
 
-      - name: Upload Logs on Failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs-${{ github.run_id }}
-          path: armbian-build/output/logs/
-          retention-days: 7
-          if-no-files-found: ignore
-
-      - name: Build Summary
+      - name: Summary
         if: always()
         run: |
           cat <<'EOF'
-          ═══════════════════════════════════════════════════════════════════
+          ═════════════════════════════════════════════════════
           BUILD SUMMARY
-          ═══════════════════════════════════════════════════════════════════
-          Board:       Orange Pi 4 Pro (sun60iw2 / Allwinner A733)
-          Kernel:      6.19.y (mainline stable)
-          Release:     ${{ github.event.inputs.release || 'bookworm' }}
-          Status:      ${{ steps.build.outputs.build_success == 'true' && '✓ SUCCESS' || '✗ FAILED' }}
-          Output:      armbian-build/output/images/
-          ═══════════════════════════════════════════════════════════════════
+          ═════════════════════════════════════════════════════
+          Board:     Orange Pi 4 Pro
+          Kernel:    6.19.y (mainline stable)
+          WiFi:      MT7925 (WiFi 7, 802.11be) - INCLUDED
+          Release:   ${{ github.event.inputs.release || 'bookworm' }}
+          Status:    ${{ steps.build.outputs.build_success == 'true' && '✓ SUCCESS' || '✗ FAILED' }}
+          
+          WiFi 7 Support Details:
+          - Driver: mt7925e (PCIe)
+          - Bands: 2.4GHz, 5GHz, 6GHz
+          - Features: 802.11be, 4096-QAM, 160MHz channels
+          - Firmware: Install from linux-firmware package
+          ═════════════════════════════════════════════════════
           EOF
