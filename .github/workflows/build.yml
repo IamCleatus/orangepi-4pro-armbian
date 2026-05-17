@@ -1,4 +1,4 @@
-name: Build Stable Gateway Baseline
+name: Build w/ kernel 6.19 for Wi-Fi 7 Image
 on:
   workflow_dispatch:
 
@@ -6,14 +6,14 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # 1. Register cross-architecture translation layers
+      # 1. Register architecture translation layers for the runner environment
       - name: Register QEMU
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-user-static binfmt-support
           docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 
-      # 2. Pull down the official Armbian compilation framework
+      # 2. Retrieve the official Armbian compilation framework
       - name: Checkout Armbian Build System
         uses: actions/checkout@v4
         with:
@@ -26,25 +26,48 @@ jobs:
         with:
           path: build-system/userpatches
 
-      # 4. Safe and Instant Disk Space Reclamation (Bypasses dangerous apt purges)
+      # 4. TARGETED INJECTION: Append Wi-Fi 7 modules to the pre-existing full template
+      - name: Enable Wi-Fi 7 Driver Modules
+        run: |
+          TARGET_CONFIG="build-system/userpatches/config/kernel/linux-sun60iw2-mainline.config"
+          if [ -f "$TARGET_CONFIG" ]; then
+            echo "Injecting high-bandwidth wireless driver options into baseline template..."
+            cat <<EOF >> "$TARGET_CONFIG"
+          CONFIG_MT7925U=m
+          CONFIG_MT792x_LIB=m
+          CONFIG_MT76_USB=m
+          CONFIG_MT76_CONNAC_LIB=m
+          CONFIG_BT_MTK=m
+          CONFIG_BT_HCIBTUSB=m
+          CONFIG_BT_HCIBTUSB_MTK=y
+          EOF
+            echo "Driver configurations successfully merged into template layout."
+          else
+            echo "::error::Baseline mainline template file missing at $TARGET_CONFIG" && exit 1
+          fi
+
+      # 5. Reclaim workspace storage space inside the hosted server environment safely
       - name: Safe Free Disk Space
         run: |
-          echo "Safely reclaiming disk space by wiping heavy pre-installed data assets..."
+          echo "Clearing out heavy pre-installed data assets..."
           sudo rm -rf /usr/local/lib/android
           df -h /
 
-      # 5. Execute compilation targeting the fully stabilized vendor hardware branch
+      # 6. Execute the build engine targeting the true mainline branch structure
       - name: Build Armbian Image
         run: |
           cd build-system
-          # BRANCH=vendor uses the manufacturer's verified Device Tree and power tables, ensuring a 100% successful boot
-          ./compile.sh BOARD=orangepi-4pro BRANCH=vendor RELEASE=bookworm \
-          BUILD_MINIMAL=yes KERNEL_CONFIGURE=no \
+          # BRANCH=mainline instructs the engine to look for the linux-sun60iw2-mainline.config file we modified
+          # KERNEL_MAJOR_MINOR=6.19 satisfies the board file's forced branch constraint
+          # Disabling KHDR and KSRC skips the packaging phases to bypass the Module.symvers bug
+          ./compile.sh BOARD=orangepi-4pro BRANCH=mainline RELEASE=bookworm \
+          BUILD_MINIMAL=yes KERNEL_CONFIGURE=no KERNEL_MAJOR_MINOR=6.19 \
+          BUILD_KHDR=no BUILD_KSRC=no \
           SKIP_EXTERNAL_DRIVERS=yes DOCKER_PRIVILEGED=yes
 
-      # 6. Extract and capture the flashable operating system image asset
+      # 7. Collect and export the flashable operating system image asset
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: 6.19x-Stable-Baseline
+          name: orangepi-4pro-6.19-Image
           path: build-system/output/images/*.img*
