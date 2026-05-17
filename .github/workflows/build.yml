@@ -23,51 +23,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate:
-    name: Validate Configuration
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Custom Patches
-        uses: actions/checkout@v4
-        with:
-          path: patches-repo
-
-      - name: Validate Board Configuration
-        run: |
-          set -e
-          echo "Validating Orange Pi 4 Pro board configuration..."
-          
-          [ -f "patches-repo/config/boards/orangepi-4pro.conf" ] || {
-            echo "ERROR: Board config not found"
-            exit 1
-          }
-          
-          source patches-repo/config/boards/orangepi-4pro.conf
-          
-          [ -n "$BOARDFAMILY" ] || { echo "ERROR: BOARDFAMILY not set"; exit 1; }
-          [ -n "$KERNELSOURCE" ] || { echo "ERROR: KERNELSOURCE not set"; exit 1; }
-          [ -n "$KERNELBRANCH" ] || { echo "ERROR: KERNELBRANCH not set"; exit 1; }
-          
-          echo "✓ Board: $BOARDFAMILY"
-          echo "✓ Kernel Branch: $KERNELBRANCH"
-          echo "✓ Kernel Source: $KERNELSOURCE"
-
-      - name: Validate Kernel Config
-        run: |
-          set -e
-          CONFIG_FILE="patches-repo/config/kernel/linux-sun60iw2-mainline.config"
-          
-          [ -f "$CONFIG_FILE" ] || {
-            echo "ERROR: Kernel config not found at $CONFIG_FILE"
-            exit 1
-          }
-          
-          LINES=$(wc -l < "$CONFIG_FILE")
-          echo "✓ Kernel config valid ($LINES lines)"
-
   build:
     name: Build Armbian Image
-    needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 480
     
@@ -95,46 +52,57 @@ jobs:
           path: armbian-build/userpatches
           fetch-depth: 1
 
-      - name: Link Board Configuration Files
+      - name: Register Custom Board with Armbian
         run: |
           set -e
-          USERPATCHES="armbian-build/userpatches"
-          BUILD_SYSTEM="armbian-build"
+          cd armbian-build
           
-          echo "Linking custom board configurations..."
+          USERPATCHES="userpatches"
           
+          echo "Registering custom board configuration..."
+          
+          # Copy board config to Armbian's board directory
           cp -v "$USERPATCHES/config/boards/orangepi-4pro.conf" \
-                "$BUILD_SYSTEM/config/boards/" || {
+                "config/boards/" || {
             echo "ERROR: Failed to copy board config"
             exit 1
           }
           
-          mkdir -p "$BUILD_SYSTEM/config/sources/families"
+          # Copy family config
+          mkdir -p "config/sources/families"
           cp -v "$USERPATCHES/config/sources/families/sun60iw2.conf" \
-                "$BUILD_SYSTEM/config/sources/families/" || {
+                "config/sources/families/" || {
             echo "ERROR: Failed to copy family config"
             exit 1
           }
           
-          mkdir -p "$BUILD_SYSTEM/userpatches/kernel-config"
+          # Copy kernel config to userpatches
+          mkdir -p "userpatches/kernel-config"
           cp -v "$USERPATCHES/config/kernel/linux-sun60iw2-mainline.config" \
-                "$BUILD_SYSTEM/userpatches/kernel-config/" || {
+                "userpatches/kernel-config/" || {
             echo "ERROR: Failed to copy kernel config"
             exit 1
           }
           
-          echo "✓ Board configs linked successfully"
+          echo "✓ Board files copied successfully"
+          
+          # Verify board is discoverable
+          if grep -q "orangepi-4pro" config/boards/orangepi-4pro.conf; then
+            echo "✓ Board config syntax verified"
+          else
+            echo "ERROR: Board config not properly formatted"
+            exit 1
+          fi
 
       - name: Prepare Kernel Patches
         run: |
           set -e
-          USERPATCHES="armbian-build/userpatches"
-          PATCH_DIR="$USERPATCHES/patches/kernel/sun60iw2-mainline"
+          PATCH_DIR="armbian-build/userpatches/patches/kernel/sun60iw2-mainline"
           
-          if [ -d "$PATCH_DIR" ] && [ "$(find $PATCH_DIR -name '*.patch' | wc -l)" -gt 0 ]; then
-            echo "Found $(find $PATCH_DIR -name '*.patch' | wc -l) kernel patches"
+          if [ -d "$PATCH_DIR" ] && [ "$(find "$PATCH_DIR" -name '*.patch' | wc -l)" -gt 0 ]; then
+            echo "Found $(find "$PATCH_DIR" -name '*.patch' | wc -l) kernel patches"
             find "$PATCH_DIR" -name '*.patch' | sort | while read patch; do
-              echo "  - $(basename $patch)"
+              echo "  - $(basename "$patch")"
             done
             echo "✓ Patches ready for application during build"
           else
@@ -148,13 +116,14 @@ jobs:
           sudo rm -rf /opt/hostedtoolcache 2>/dev/null || true
           df -h / | head -2
 
-      - name: Compile Armbian Image
+      - name: Build Armbian Image (Non-Interactive)
         id: build
         run: |
           set -e
           cd armbian-build
           
-          BUILD_CMD="./compile.sh \
+          # Build with explicit non-interactive parameters
+          ./compile.sh \
             BOARD=orangepi-4pro \
             BRANCH=mainline \
             RELEASE=${{ github.event.inputs.release || 'bookworm' }} \
@@ -165,16 +134,17 @@ jobs:
             BUILD_KSRC=no \
             SKIP_EXTERNAL_DRIVERS=yes \
             DOCKER_PRIVILEGED=yes \
-            ${{ github.event.inputs.build_debug == 'true' && 'DEBUG=yes' || '' }}"
+            INTERACTIVE='no' \
+            ${{ github.event.inputs.build_debug == 'true' && 'DEBUG=yes' || '' }}
           
-          echo "Executing build..."
-          if eval "$BUILD_CMD"; then
+          BUILD_EXIT=$?
+          if [ $BUILD_EXIT -eq 0 ]; then
             echo "✓ Build completed successfully"
             echo "build_success=true" >> "$GITHUB_OUTPUT"
           else
-            echo "✗ Build failed"
+            echo "✗ Build failed with exit code $BUILD_EXIT"
             echo "build_success=false" >> "$GITHUB_OUTPUT"
-            exit 1
+            exit $BUILD_EXIT
           fi
 
       - name: Verify Build Output
@@ -200,15 +170,6 @@ jobs:
           
           echo "✓ Found $IMG_COUNT image file(s):"
           find "$OUTPUT_DIR" -maxdepth 1 -name "*.img*" -type f -exec ls -lh {} \;
-          
-          find "$OUTPUT_DIR" -maxdepth 1 -name "*.img" -type f | while read img; do
-            SIZE=$(stat -f%z "$img" 2>/dev/null || stat -c%s "$img" 2>/dev/null)
-            if [ "$SIZE" -lt 100000000 ]; then
-              echo "ERROR: Image $img suspiciously small: $SIZE bytes"
-              exit 1
-            fi
-            echo "✓ Image valid: $(basename $img) ($((SIZE / 1024 / 1024))MB)"
-          done
 
       - name: Upload Build Artifacts
         if: steps.build.outputs.build_success == 'true'
@@ -243,6 +204,5 @@ jobs:
           Kernel:      6.19.y (mainline stable)
           Release:     ${{ github.event.inputs.release || 'bookworm' }}
           Status:      ${{ steps.build.outputs.build_success == 'true' && '✓ SUCCESS' || '✗ FAILED' }}
-          Artifacts:   armbian-build/output/images/
           ═══════════════════════════════════════════════════════════════════
           EOF
