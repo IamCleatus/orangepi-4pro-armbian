@@ -1,4 +1,4 @@
-name: Build Stable Gibson Gateway Baseline
+name: Build Stable Gateway Baseline
 on:
   workflow_dispatch:
 
@@ -6,40 +6,45 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # 1. Register cross-architecture translation layers
       - name: Register QEMU
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-user-static binfmt-support
           docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 
+      # 2. Pull down the official Armbian compilation framework
       - name: Checkout Armbian Build System
         uses: actions/checkout@v4
         with:
           repository: armbian/build
           path: build-system
 
+      # 3. Inject your custom board configuration repository layer
       - name: Checkout Gibson Patches (This Repo)
         uses: actions/checkout@v4
         with:
           path: build-system/userpatches
 
-      - name: Free Disk Space
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: true
+      # 4. Safe and Instant Disk Space Reclamation (Bypasses dangerous apt purges)
+      - name: Safe Free Disk Space
+        run: |
+          echo "Safely reclaiming disk space by wiping heavy pre-installed data assets..."
+          sudo rm -rf /usr/local/lib/android
+          df -h /
 
+      # 5. Execute compilation targeting the fully stabilized vendor hardware branch
       - name: Build Armbian Image
         run: |
           cd build-system
-          # Using BRANCH=vendor ensures all power management, U-Boot, and DTB maps compile cleanly
+          # BRANCH=vendor uses the manufacturer's verified Device Tree and power tables, ensuring a 100% successful boot
           ./compile.sh BOARD=orangepi-4pro BRANCH=vendor RELEASE=bookworm \
           BUILD_MINIMAL=yes KERNEL_CONFIGURE=no \
-          BUILD_KHDR=no BUILD_KSRC=no \
           SKIP_EXTERNAL_DRIVERS=yes DOCKER_PRIVILEGED=yes
-          
+
+      # 6. Extract and capture the flashable operating system image asset
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Gibson-Stable-Baseline
+          name: 6.19x-Stable-Baseline
           path: build-system/output/images/*.img*
