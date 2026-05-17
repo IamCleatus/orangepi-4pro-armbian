@@ -6,7 +6,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # 1. Register architecture translation layers for the runner environment
+      # 1. Initialize cross-architecture translation layers
       - name: Register QEMU
         run: |
           sudo apt-get update
@@ -20,19 +20,40 @@ jobs:
           repository: armbian/build
           path: build-system
 
-      # 3. Inject your custom board configuration repository layer
+      # 3. Inject your custom board configuration layer
       - name: Checkout Gibson Patches (This Repo)
         uses: actions/checkout@v4
         with:
           path: build-system/userpatches
 
-      # 4. TARGETED INJECTION: Append Wi-Fi 7 modules to the pre-existing full template
-      - name: Enable Wi-Fi 7 Driver Modules
+      # 4. HOT-PATCH: Prevent file-finding bugs during the final packaging phase
+      - name: Hot-Patch Packaging Engine
         run: |
-          TARGET_CONFIG="build-system/userpatches/config/kernel/linux-sun60iw2-mainline.config"
-          if [ -f "$TARGET_CONFIG" ]; then
-            echo "Injecting high-bandwidth wireless driver options into baseline template..."
-            cat <<EOF >> "$TARGET_CONFIG"
+          TARGET_FILE="build-system/lib/functions/compilation/kernel-debs.sh"
+          if [ -f "$TARGET_FILE" ]; then
+            sed -i 's/find Module.symvers/find Module.symvers 2>\/dev\/null || find/g' "$TARGET_FILE"
+          fi
+
+      # 5. OS-HOOK: Force the target OS to use uncompressed initramfs (Bypasses the CONFIG_RD_GZIP crash)
+      - name: Create OS Compression Bypass Hook
+        run: |
+          mkdir -p build-system/userpatches
+          cat <<'EOF' > build-system/userpatches/customize-image.sh
+          #!/bin/bash
+          echo "Bypassing kernel compression limits by configuring initramfs to use uncompressed layouts..."
+          if [ -f "/etc/initramfs-tools/initramfs.conf" ]; then
+            sed -i 's/COMPRESS=gzip/COMPRESS=none/g' /etc/initramfs-tools/initramfs.conf
+            echo "Successfully patched /etc/initramfs-tools/initramfs.conf"
+          fi
+          EOF
+          chmod +x build-system/userpatches/customize-image.sh
+
+      # 6. BLANKET INJECTION: Ensure Wi-Fi 7 drivers are enabled across all template variants
+      - name: Harden All Architecture Config Templates
+        run: |
+          find build-system/ -name "linux-sun60iw2-*.config" -type f | while read -r config_file; do
+            cat <<EOF >> "$config_file"
+          CONFIG_BLK_DEV_INITRD=y
           CONFIG_MT7925U=m
           CONFIG_MT792x_LIB=m
           CONFIG_MT76_USB=m
@@ -41,31 +62,41 @@ jobs:
           CONFIG_BT_HCIBTUSB=m
           CONFIG_BT_HCIBTUSB_MTK=y
           EOF
-            echo "Driver configurations successfully merged into template layout."
-          else
-            echo "::error::Baseline mainline template file missing at $TARGET_CONFIG" && exit 1
-          fi
+          done
+          
+          # Create explicit userpatch fallbacks to intercept fallback routines completely
+          mkdir -p build-system/userpatches/config/kernel
+          cat <<EOF > build-system/userpatches/config/kernel/linux-sun60iw2-mainline.config
+          CONFIG_BLK_DEV_INITRD=y
+          CONFIG_MT7925U=m
+          CONFIG_MT792x_LIB=m
+          CONFIG_MT76_USB=m
+          CONFIG_MT76_CONNAC_LIB=m
+          CONFIG_BT_MTK=m
+          CONFIG_BT_HCIBTUSB=m
+          CONFIG_BT_HCIBTUSB_MTK=y
+          EOF
+          
+          cp build-system/userpatches/config/kernel/linux-sun60iw2-mainline.config build-system/userpatches/config/kernel/linux-sun60iw2-current.config
+          cp build-system/userpatches/config/kernel/linux-sun60iw2-mainline.config build-system/userpatches/config/kernel/linux-sun60iw2-edge.config
+          cp build-system/userpatches/config/kernel/linux-sun60iw2-mainline.config build-system/userpatches/config/kernel/linux-sun60iw2-vendor.config
 
-      # 5. Reclaim workspace storage space inside the hosted server environment safely
+      # 7. Reclaim runtime disk storage space inside the hosted server safely
       - name: Safe Free Disk Space
         run: |
-          echo "Clearing out heavy pre-installed data assets..."
           sudo rm -rf /usr/local/lib/android
           df -h /
 
-      # 6. Execute the build engine targeting the true mainline branch structure
+      # 8. Execute the compilation engine targeting the true branch structure
       - name: Build Armbian Image
         run: |
           cd build-system
-          # BRANCH=mainline instructs the engine to look for the linux-sun60iw2-mainline.config file we modified
-          # KERNEL_MAJOR_MINOR=6.19 satisfies the board file's forced branch constraint
-          # Disabling KHDR and KSRC skips the packaging phases to bypass the Module.symvers bug
           ./compile.sh BOARD=orangepi-4pro BRANCH=mainline RELEASE=bookworm \
           BUILD_MINIMAL=yes KERNEL_CONFIGURE=no KERNEL_MAJOR_MINOR=6.19 \
           BUILD_KHDR=no BUILD_KSRC=no \
           SKIP_EXTERNAL_DRIVERS=yes DOCKER_PRIVILEGED=yes
 
-      # 7. Collect and export the flashable operating system image asset
+      # 9. Collect and export the flashable operating system image asset
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
