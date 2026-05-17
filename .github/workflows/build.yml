@@ -1,4 +1,4 @@
-name: Build w/ kernel 6.19 for Wi-Fi 7 Image
+name: Build Stable Gibson Gateway Baseline
 on:
   workflow_dispatch:
 
@@ -6,76 +6,40 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # 1. Register architecture translators for the hosted runner environment
       - name: Register QEMU
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-user-static binfmt-support
           docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 
-      # 2. Retrieve the official Armbian compilation framework
       - name: Checkout Armbian Build System
         uses: actions/checkout@v4
         with:
           repository: armbian/build
           path: build-system
 
-      # 3. Inject your custom board configuration repository layout
       - name: Checkout Gibson Patches (This Repo)
         uses: actions/checkout@v4
         with:
           path: build-system/userpatches
 
-      # 4. HOT-PATCH: Safeguard against the Module.symvers packaging bug
-      - name: Hot-Patch Packaging Engine
-        run: |
-          TARGET_FILE="build-system/lib/functions/compilation/kernel-debs.sh"
-          if [ -f "$TARGET_FILE" ]; then
-            sed -i 's/find Module.symvers/find Module.symvers 2>\/dev\/null || find/g' "$TARGET_FILE"
-          fi
-
-      # 5. TARGETED INJECTION: Append Wi-Fi 7 driver mapping directly onto the 6.19 baseline template
-      - name: Inject Wi-Fi 7 Drivers into Mainline Template
-        run: |
-          CONFIG_PATH="build-system/userpatches/config/kernel/linux-sun60iw2-mainline.config"
-          if [ -f "$CONFIG_PATH" ]; then
-            echo "Merging high-bandwidth MediaTek wireless driver variables into mainline template..."
-            cat <<EOF >> "$CONFIG_PATH"
-          CONFIG_BLK_DEV_INITRD=y
-          CONFIG_RD_GZIP=y
-          CONFIG_MT7925U=m
-          CONFIG_MT792x_LIB=m
-          CONFIG_MT76_USB=m
-          CONFIG_MT76_CONNAC_LIB=m
-          CONFIG_BT_MTK=m
-          CONFIG_BT_HCIBTUSB=m
-          CONFIG_BT_HCIBTUSB_MTK=y
-          EOF
-            echo "Mainline kernel driver injection completed successfully."
-          else
-            echo "::error::Target mainline template configuration layout missing at $CONFIG_PATH!" && exit 1
-          fi
-
-      # 6. Allocate runtime disk real estate inside the GitHub hosted server environment
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
         with:
           tool-cache: true
           android: true
 
-      # 7. Execute compilation targeting the true mainline branch structure
       - name: Build Armbian Image
         run: |
           cd build-system
-          # Using BRANCH=mainline and KERNEL_MAJOR_MINOR=6.19 maps perfectly to the repository baseline variables
-          ./compile.sh BOARD=orangepi-4pro BRANCH=mainline RELEASE=bookworm \
-          BUILD_MINIMAL=yes KERNEL_CONFIGURE=no KERNEL_MAJOR_MINOR=6.19 \
+          # Using BRANCH=vendor ensures all power management, U-Boot, and DTB maps compile cleanly
+          ./compile.sh BOARD=orangepi-4pro BRANCH=vendor RELEASE=bookworm \
+          BUILD_MINIMAL=yes KERNEL_CONFIGURE=no \
           BUILD_KHDR=no BUILD_KSRC=no \
-          DOCKER_PRIVILEGED=yes
+          SKIP_EXTERNAL_DRIVERS=yes DOCKER_PRIVILEGED=yes
           
-      # 8. Collect and export flashable operating system build assets
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: orangepi-4pro-6.19-Image
+          name: Gibson-Stable-Baseline
           path: build-system/output/images/*.img*
